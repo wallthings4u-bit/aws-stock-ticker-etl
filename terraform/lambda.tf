@@ -5,6 +5,12 @@ data "archive_file" "lambda_zip" {
   output_path = "${path.module}/.build/lambda_function.zip"
 }
 
+# CloudWatch Logs の保持期間設定（14日で自動削除して課金・肥大化を防止）
+resource "aws_cloudwatch_log_group" "lambda_log_group" {
+  name              = "/aws/lambda/${var.project_name}-${var.env}-collector"
+  retention_in_days = 14
+}
+
 #AWS上にLambda関数を作成するための設計図（スペック表＋プログラム本体の指定）
 resource "aws_lambda_function" "stock_etl" {
   function_name    = "${var.project_name}-${var.env}-collector"
@@ -21,6 +27,8 @@ resource "aws_lambda_function" "stock_etl" {
 
   #追加パッケージ（AWS公式のAWSSDKPandas Layer）をアタッチ
   layers = [var.awswrangler_layer_arn]
+
+
 
   environment {
     variables = {

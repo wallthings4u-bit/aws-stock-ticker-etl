@@ -9,6 +9,8 @@ resource "aws_athena_workgroup" "stock_wg" {
   configuration {
     enforce_workgroup_configuration    = true
     publish_cloudwatch_metrics_enabled = false
+    # 1回のクエリでスキャンできるデータ量の上限を100MBに制限（意図しない高額課金の防止）
+    bytes_scanned_cutoff_per_query     = 104857600
 
     result_configuration {
       #SQLの検索結果ファイルを保存するS3の場所（s3.tfで作った専用バケットを指定）

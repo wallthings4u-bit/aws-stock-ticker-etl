@@ -1,0 +1,27 @@
+# Terraform
+.terraform/
+**/.terraform/
+.build/
+**/.build/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform.lock.hcl
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.zip
+
+# Secrets & Test outputs
+.env
+.env.*
+response.json
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/

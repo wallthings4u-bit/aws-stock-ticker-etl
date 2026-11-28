@@ -107,9 +107,9 @@ data "aws_iam_policy_document" "github_actions_assume" {
       values   = [local.sts_service_principal]
     }
     condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "${local.github_oidc_host}:sub"
-      values   = ["repo:wallthings4u-bit/aws-stock-ticker-etl:ref:refs/heads/main"]
+      values   = ["repo:wallthings4u-bit*/aws-stock-ticker-etl*:ref:refs/heads/main"]
     }
   }
 }

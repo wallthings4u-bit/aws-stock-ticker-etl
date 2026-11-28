@@ -1,0 +1,115 @@
+# GitHub Actions ワークフロー（CI/CD自動デプロイ定義）
+name: Deploy Lambda with Smoke Test & Safe Rollback
+
+# 【いつ起動するか（トリガー設定）】
+on:
+  push:
+    # mainブランチにプッシュされた時
+    branches:
+      - main
+    #以下のファイルが変更された時だけ起動
+    paths:
+      - "src/lambda/**"
+      - ".github/workflows/deploy-lambda.yml"
+  # GitHub画面の「Run workflow」ボタンから手動実行もできるようにする
+
+  # GitHubの「Actions」画面のボタンから手動でも実行できるようにする設定
+  workflow_dispatch:
+
+#【セキュリティ権限設定】
+permissions:
+  id-token: write # AWS OIDC認証（一時トークン発行）に必須
+  contents: read  # GitHubリポジトリ内のコードを読み取る権限
+
+# 【共通の環境変数（手順の中で使い回す設定値）】
+env:
+  AWS_REGION: ap-northeast-1
+  LAMBDA_FUNCTION_NAME: aws-stock-ticker-etl-dev-collector
+  LAMBDA_ALIAS_NAME: live
+  AWS_ROLE_ARN: arn:aws:iam::493309513612:role/aws-stock-ticker-etl-dev-github-deploy-role
+
+# 【実行する作業内容（ジョブ）】
+jobs:
+  deploy-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. リポジトリのコードを取得
+        uses: actions/checkout@v4
+
+      - name: 2. Python構文チェック（デプロイ前の静的検査）
+        run: |
+          python3 -m py_compile src/lambda/handler.py
+          echo "Syntax check passed."
+
+      - name: 3. AWSへOIDC認証（パスワードレス接続）
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 4. 現在の本番バージョン（liveエイリアス）を記録
+        id: current_live
+        run: |
+          OLD_VERSION=$(aws lambda get-alias \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --name "$LAMBDA_ALIAS_NAME" \
+            --query 'FunctionVersion' \
+            --output text)
+          echo "old_version=$OLD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Current live version: $OLD_VERSION"
+
+      - name: 5. 新バージョンのZIP作成・アップロード・バージョン発行
+        id: publish_new
+        run: |
+          mkdir -p build
+          (cd src/lambda && zip -r ../../build/lambda_function.zip .)
+
+          NEW_VERSION=$(aws lambda update-function-code \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --zip-file fileb://build/lambda_function.zip \
+            --publish \
+            --query 'Version' \
+            --output text)
+
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Published new version: $NEW_VERSION"
+
+          # AWS側で新バージョンの準備が完了するまで待機
+          aws lambda wait function-updated-v2 \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --qualifier "$NEW_VERSION"
+
+      - name: 6. 新バージョン単体へのスモークテスト（試運転）
+        id: smoke_test
+        run: |
+          set +e
+          aws lambda invoke \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --qualifier "${{ steps.publish_new.outputs.new_version }}" \
+            --payload '{"smoke_test": true}' \
+            --cli-binary-format raw-in-base64-out \
+            response.json > invoke_meta.json 2>&1
+          EXIT_CODE=$?
+          set -e
+
+          cat invoke_meta.json || true
+          cat response.json || true
+          echo ""
+
+          # AWS CLI自体が失敗、またはLambda内部でエラー(FunctionError)が発生した場合は不合格
+          if [ $EXIT_CODE -ne 0 ] || grep -q '"FunctionError"' invoke_meta.json; then
+            echo "[ERROR] Smoke test FAILED on version ${{ steps.publish_new.outputs.new_version }}!"
+            echo "[ROLLBACK] Keeping live alias on previous stable version: ${{ steps.current_live.outputs.old_version }}"
+            exit 1
+          fi
+
+          echo "[SUCCESS] Smoke test PASSED on version ${{ steps.publish_new.outputs.new_version }}!"
+
+      - name: 7. テスト合格時のみ本番エイリアス（live）を新バージョンへ切り替え
+        run: |
+          aws lambda update-alias \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --name "$LAMBDA_ALIAS_NAME" \
+            --function-version "${{ steps.publish_new.outputs.new_version }}"
+
+          echo "Switched alias '$LAMBDA_ALIAS_NAME': v${{ steps.current_live.outputs.old_version }} -> v${{ steps.publish_new.outputs.new_version }}"

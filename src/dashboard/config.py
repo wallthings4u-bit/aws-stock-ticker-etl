@@ -7,7 +7,14 @@ ATHENA_WORKGROUP = "aws-stock-ticker-etl-dev-wg"
 # キャッシュ有効期限（秒）: 10分
 CACHE_TTL_SECONDS = 600
 
-# 銘柄コードと日本語表示名のマッピング
+# 為替レート識別子とフォールバック設定
+FX_SYMBOL = "USDJPY"
+DEFAULT_USDJPY_RATE = 150.0
+
+# 表示通貨の選択肢
+CURRENCY_OPTIONS = ["USD ($)", "JPY (¥)"]
+
+# 株式銘柄コードと日本語表示名のマッピング（為替レコードは含めない）
 TICKER_LABELS = {
     "EWJ": "EWJ (日経平均連動ETF)",
     "DIA": "DIA (ダウ平均連動ETF)",

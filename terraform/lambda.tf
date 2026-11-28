@@ -25,10 +25,11 @@ resource "aws_lambda_function" "stock_etl" {
   #ZIPファイルのハッシュ値:handler.pyを書き換えた時にTerraformが変更を検知して再アップロードするために必須
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
 
+  # デプロイごとに不変のバージョン番号（1, 2, 3...）を発行する（エイリアス運用に必須）
+  publish = true
+
   #追加パッケージ（AWS公式のAWSSDKPandas Layer）をアタッチ
   layers = [var.awswrangler_layer_arn]
-
-
 
   environment {
     variables = {
@@ -38,5 +39,19 @@ resource "aws_lambda_function" "stock_etl" {
       GLUE_TABLE       = "stock_quotes"
       TARGET_TICKERS   = var.target_tickers
     }
+  }
+}
+
+# 本番用エイリアス（あだ名: live）の作成
+# GitHub Actionsでのテスト合格後、このエイリアスが指すバージョン番号を切り替える
+resource "aws_lambda_alias" "live" {
+  name             = "live"
+  description      = "Production alias updated safely after CI smoke test"
+  function_name    = aws_lambda_function.stock_etl.function_name
+  function_version = aws_lambda_function.stock_etl.version
+
+  # GitHub Actions側で切り替えたバージョン番号をTerraformが上書きしないよう保護
+  lifecycle {
+    ignore_changes = [function_version]
   }
 }

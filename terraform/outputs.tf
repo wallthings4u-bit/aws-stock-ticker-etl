@@ -14,6 +14,16 @@ output "lambda_function_name" {
   value       = aws_lambda_function.stock_etl.function_name
 }
 
+output "lambda_live_alias_arn" {
+  description = "本番用Lambdaエイリアス(live)のARN"
+  value       = aws_lambda_alias.live.arn
+}
+
+output "github_actions_role_arn" {
+  description = "GitHub ActionsのOIDC認証で使用するIAMロールARN"
+  value       = aws_iam_role.github_actions_deploy.arn
+}
+
 output "glue_database_name" {
   description = "Glue Data Catalogのデータベース名"
   value       = aws_glue_catalog_database.stock_db.name

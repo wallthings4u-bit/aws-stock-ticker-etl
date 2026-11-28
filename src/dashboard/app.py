@@ -1,7 +1,7 @@
 import streamlit as st
 
 from charts import render_data_table, render_kpi_cards, render_price_chart
-from config import TICKER_LABELS
+from config import CURRENCY_OPTIONS, TICKER_LABELS
 from data_loader import fetch_stock_data, prepare_stock_data
 
 # --- ページ全体の設定 ---
@@ -16,12 +16,20 @@ def main() -> None:
     st.title("📈 日米主要株価・指数 ETL分析ダッシュボード")
     st.caption("Data Source: AWS S3 Data Lake (Parquet) / Queried via Amazon Athena")
 
-    # サイドバー：最新データ再取得ボタン
+    # サイドバー：コントロールと通貨切り替え
     with st.sidebar:
         st.header("コントロール")
         if st.button("🔄 最新データを再取得", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
+
+        st.divider()
+        selected_currency = st.radio(
+            "表示通貨",
+            options=CURRENCY_OPTIONS,
+            index=0,
+            horizontal=True,
+        )
 
     # 1. データ取得（data_loader.py の関数を呼び出し）
     try:
@@ -36,9 +44,16 @@ def main() -> None:
         st.stop()
 
     # 2. データ整形（data_loader.py の関数を呼び出し）
-    df, date_col, price_col = prepare_stock_data(raw_df)
+    df, date_col, price_col, latest_usdjpy = prepare_stock_data(raw_df)
 
-    # サイドバー：銘柄フィルター
+    # サイドバー：適用中のドル円レートと銘柄フィルター
+    with st.sidebar:
+        st.metric(
+            label="💱 適用ドル円レート (USD/JPY)",
+            value=f"¥{latest_usdjpy:,.2f}",
+        )
+        st.divider()
+
     available_symbols = sorted(df["symbol"].unique().tolist())
     selected_symbols = st.sidebar.multiselect(
         "表示する銘柄を選択",
@@ -54,9 +69,20 @@ def main() -> None:
     filtered_df = df[df["symbol"].isin(selected_symbols)]
 
     # 3. 画面部品の描画（charts.py の関数を呼び出し）
-    render_kpi_cards(filtered_df, selected_symbols, date_col, price_col)
+    render_kpi_cards(
+        filtered_df,
+        selected_symbols,
+        date_col,
+        price_col,
+        currency=selected_currency,
+    )
     st.divider()
-    render_price_chart(filtered_df, date_col, price_col)
+    render_price_chart(
+        filtered_df,
+        date_col,
+        price_col,
+        currency=selected_currency,
+    )
     render_data_table(filtered_df, date_col)
 
 
